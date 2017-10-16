@@ -1,0 +1,133 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[12pt,a4paper]{paper}
+\usepackage[latin1]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{epsfig,graphics,graphicx}
+\usepackage{color}
+\usepackage{mathtools}
+%\usepackage{here}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\acc}[2]{ \{ #1 \}_{#2} }
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+\begin{center}
+  {\bf \Large Simple application of the PoPe method\\ Work in progress... \vspace{2.pt}\\}
+  {T. Cartier-Michaud, ...} \\
+  {October 2017}\\
+\end{center}
+
+\tableofcontents
+
+%*********************************
+%*** PoPe method in a nutshell ***
+%*********************************
+%\baselineskip = 16.pt
+\section[PoPe method in a nutshell]{PoPe method in a nutshell : decomposition onto a relevant basis plus an error}
+The Projection on Proper element (PoPe \textbf{cite}) method is a method allowing to recover the equations that have generated a set of data. In terms of verification, using output of any simulations to verify a code is fundamentaly different from the Method of Manufcatured Solutions (MMS \textbf{cite}) where the code is verified with respect to an ``artificial'' solution as it is difficult to obtain a target analytical solution representative of typical simulations. Often the analytical solution chosen is smooth in space an time with respect to the discretisation, it is based on simplified geomertries or boundary conditions and it might not used every operators of the model : this verification is partial.
+Using PoPe onto a set of data produced by a code, if one searches for the full set of equations implemented in the code considered, one does code verification, if one searches for a reduced set of equations compare to the set used in the first place by the code, one does model reduction.
+PoPe can also be understand a procedure of a posteriori error checking a posteriori. In this thesis, it has been used as a post treatment developped independently of the code as a Matlab/Octave library.
+
+\section[Practial implementation of PoPe method]{Practial implementation of PoPe method}
+%
+To explain the method, we use the following density equation eq.(\ref{eq:dtN}) as an example :
+%
+\begin{eqnarray}
+  \label{eq:dtN}
+  \partial_t N =
+  \vec{\nabla} (D_N \vec{\nabla}_\perp N)
+-  \vec{\nabla} ( N u^{ion}_\parallel \vec{b}) 
+-  \vec{\nabla} ( N \vec{u}_{E \times B})
+-  \vec{\nabla} ( N \vec{u}^{ion}_{\nabla B})
++  S_N
+\end{eqnarray}
+%
+Equation we immedialtely rewritte in a more compact form, using ``$th$'' subscript for ``theoretical'', $\acc{O^i}{th}$ the five operators of eq.(\ref{eq:dtN}) for $i\in[1,5]$ associated to five theoretical weights $w^i_{th}$, also using Einstein's convention on indices :
+%
+\begin{eqnarray}
+  \acc{\partial_t N}{th} &=& w^i_{th} \acc{O^i}{th} \label{eq:dtN_th}\\
+  w_{th} &=& [+1,-1,-1,-1,+1] \label{eq:w_th}
+\end{eqnarray}
+
+What we can easily do is :
+\begin{enumerate}
+  %
+\item Measurements of $\acc{\partial_t N}{ef}$, the effective (``$ef$'' subscript) time derivative computed with finite differences from outputs of a given code. In the present case, finite differences of order four compare to the order one time integration scheme in TOKAM3X.
+  \begin{eqnarray}
+    \acc{\partial_t N}{ef}(t) &=& \sum_{j=-2}^2 c(j) N(t+j\Delta t) + \mathcal{O}(\Delta t^4)\\
+    c(-2:2) &=& [+1,-8,0,+8,-1]/(12\Delta t)
+  \end{eqnarray}
+  %  
+\item Computations of each operator in eq.(\ref{eq:dtN}), labeled $\acc{O}{ol}^i$ for $i \in [1,5]$, using higly accurate off-line (``$ol$'' subscript) post-treatments. TOKAM3X using second order method in space, the offline estimation uses method of order $2$ to $8$.
+  \begin{eqnarray}
+    \acc{O^i}{ol} &\simeq& \acc{O^i}{th} \label{eq:olvsth}\\
+    ||\acc{O^i}{th}- \acc{O^i}{ol}|| &\ll&  ||\acc{O^i}{th}- \acc{O^i}{ef}|| \label{eq:tholef}
+  \end{eqnarray}
+  %
+\item Linear projections of $\acc{\partial_t N}{ef}$ onto $\acc{O}{ol}^i$ and thus recover effective weights $w^i_{ef}$ and an effective residual $\epsilon_{ef}$ lineary independent of $\acc{O}{ol}^i$.
+  \begin{equation}
+    \acc{\partial_t N}{ef} = w^i_{ef} \acc{O}{ol}^i + \epsilon_{ef}
+  \end{equation}
+  %
+  This projection is simply done by solving the following linear systems eq.(\ref{eq:leastmeansquare}) based on the least mean square approach. The residual is then recovered by explicitly computing eq.(\ref{eq:epsef}).
+\begin{eqnarray}
+  A^t A ~ w_{ef} &=& A^t \acc{\partial_t N}{ef} \label{eq:leastmeansquare}\\
+  \acc{\partial_t N}{ef} - A ~ w_{ef} &=& \epsilon_{ef} \label{eq:epsef}\\
+  A(p,i) &=& \acc{O(p)^i}{ol}
+\end{eqnarray}
+The matrix $A$ is of size $P \times I$. Each column of the matrix $A$ is the evaluation of the $i^{th}$ operator from the set of $I$ operators present in the tested equation. Those evalations are perfomed for $P$ points labeled by the indice $p$. $P$ is define by the discretisation used to solve the equation with the code we want to verify in the first place. Usually $P\gg I$ which justifies the mean least square approach to obtain the best estimation of $w_{ef}$. For TOKAM3X, typically, we have $P = N_{r} \times N_{\theta} \times N_{\phi} \times N_t \gg 10^6$ for a unique simulation. Nevertheless, to introduce a time dependence in $w_{ef}$, we usually use $N_t$ sets of $  N_{r} \times N_{\theta} \times N_{\phi} \ge 10^4$ points.
+%
+\end{enumerate}
+%
+This leads to the interpretation of the effective time derivative of a given code ($\acc{\partial_t N}{ef}$) as a sum of weighted (by $w^i_{ef}$) operators ($\acc{O}{ol}^i$) plus a residual ($\epsilon_{ef}$) which has no linear dependency toward the operators of the equations. Ideally, $w_{ef} = w_{th}$ and $\epsilon_{ef} = 0$.
+%
+This decompostion is relevant as weights such as $w^i_{ef}$ define the nature of the equation so they control the behavior of the system (theoretically and numerically).
+A simple error such as the used of a diffusion coeffient two times higher than the one theoretically wanted would immediately be seen with $w^1_{ef} = 2 w^i_{th}$.
+The control of weights would be absolute if $\acc{O^i}{ef}$, operators effectively implemeted in the code, were ``exact''. As we discretise solutions over a finite number of degree of freedom, each having a finite accuracy, operators $\acc{O^i}{ef}$ usually differ from theoertical expression of operators $\acc{O^i}{th}$. The theoretical expression of operators being not accessible usually, we do not compare $\acc{O^i}{ef}$ to $\acc{O^i}{th}$ but rather to $\acc{O^i}{ol}$, a set of operators computed off-line using a greater accuray than for $\acc{O^i}{ef}$, so $\acc{O^i}{ol}$ evaluations are closer to $\acc{O^i}{th}$ than $\acc{O^i}{ef}$ are close to $\acc{O^i}{th}$ as define eq.(\ref{eq:tholef}). This point is important to be able to associate the residual $\epsilon_{ef}$ to an error in the code and not an error in the verification process. This off-line greater accuracy is easily obtained as for off-line computations we don't have to take care of any stability with respect to time integration.
+Also, verification is usually performed on about $1\%$ of the data generated by a code. For example $1$ time step out of $100$ over time is sufficient as generally the time step is define to insure small variations of the solution between consecutive iterations. Verifying each time step is still possible but it would conduct to verify many systems very close to each other.
+Finally recommandation concerns the localisation in space and time of the data used for the verification process. One equation is seen as a law that has to be verified anywhere and at any time with respect to the state of the system at those exact location and time. Thus, we have to carefully handle variables used to recompute the equation in order to be sure not to mix a variable $a$ evaluated at $(x,t)$ with a variable $b$ evaluated at $(x+\Delta x, t+\Delta t)$, unless the analytical system cleary states it is the way to do it, that the equation contains a time delay and an action over a distance.
+%
+%**************
+%*** how to ***
+%**************
+\section{Aim of this pacakge : a test bed for PoPe}
+%
+This package aims to offer a test case of the PoPe method in order to quickly learn how to use PoPe and to test new ideas. It is written in Matlab/Octave on a simple advection - diffusion problem using two parameters $(c,D)$ and an optional source $S$ :
+\begin{eqnarray}
+  \partial_t f = c \partial_x f + D \partial_x^2 f + S
+\end{eqnarray}
+
+\subsection{How to use this pacakge}
+
+Just run ``scan\_void''...
+
+\subsection{Open issues}
+
+%
+%**************
+%*** Results ***
+%**************
+\section{Analysis of PoPe's results}
+As a preminilary study, we can introduce a more general definition of the effective residual $\epsilon_{ef}$ which, using $\acc{O^i}{ol}=\acc{O^i}{th}$ for simplification, is the total residual $\epsilon$ defined as :
+%
+\begin{eqnarray}
+  \acc{\partial_t N}{ef} - \acc{\partial_t N}{th} &=& \epsilon \label{eq:eps_total_def}\\
+  &=& ( w^i_{ef} - w^i_{th} ) \acc{O}{ol}^i + \epsilon_{ef} \label{eq:eps_total_construction}
+\end{eqnarray}
+%
+This total residual contains a part linearly dependent on the operators as seen eq.(\ref{eq:eps_total_construction}). It allows to clearly identify $\delta^i=w^i_{ef} - w^i_{th}$ the error on weights of the equations. Nevertheless, using only eq.(\ref{eq:eps_total_def}) we do not need to solve any linear system to obtain $\epsilon$.\\
+
+In this section, first we estimated the quality of a simulation studying $\epsilon$ which contains the entire information on the discrepency between the theoretical evolutoin of the systeme the effective evolution. Then a statistical study of $w_{ef}$ and $\epsilon_{ef}$ is performed in order to give a more physical interpretation of the results...
+% not dealing with boundaries
+
+\begin{thebibliography}{100}
+%\bibitem{Lesur_PRL_12} M. Lesur, P.H. Diamond submitted to Phys. Rev. Lett. (2012).
+
+\end{thebibliography}
+
+\end{document}
+
+%%% Local IspellDict: american  
